@@ -4,6 +4,11 @@ set -u
 
 # ---- Constants
 
+# Exit codes
+exit_win=0
+exit_die=1
+exit_quit=2
+
 # Set up grid
 # Array indices are whatever you like, so start from zero to match strings
 grid=([ 0]="┏━━━━━━━━━┳━━━━━━━┳━━━━━━━━━┓"
@@ -132,7 +137,7 @@ function process_input {
   inp=${inp,,}
   case $inp in
     q) # Quit
-      exit
+      exit $exit_quit
       ;;
     [wsda]) # Directions
       # Only move the minotaur if the player's move was successful (ie didn't
@@ -214,19 +219,49 @@ function check_die {
 
 # ---- Main
 
-while
-  print_grid
-  ! check_win && ! check_die && read -es -n1 -p ":" inp
-do
-  # Update
-  process_input "$inp" && inputs="$inputs ${inp:0:1}"
-done
+if [[ $# = 0 ]]; then
+  # No arguments - play interactively
+  while
+    print_grid
+    ! check_win && ! check_die && read -es -n1 -p ":" inp
+  do
+    # Update
+    process_input "$inp" && inputs="$inputs ${inp:0:1}"
+  done
 
-# Output a nice message
-if check_win; then
-  echo -e "\e[32myou win!\e[0m"
-elif check_die; then
-  echo -e "\e[31myou died\e[0m"
+  # Output a nice message and set an exit code
+  if check_win; then
+    echo -e "\e[32myou win!\e[0m"
+    exit $exit_win
+  elif check_die; then
+    echo -e "\e[31myou died\e[0m"
+    exit $exit_die
+  else
+    echo
+    exit $exit_quit
+  fi
 else
-  echo
+  # At least one argument - no GUI, simply use exit codes to answer the
+  # question "does this sequence of inputs exit the maze"
+
+  # Check whether the first argument is a "state" from which to resume
+  if [[ ${1:-} = *,* ]]; then
+    read x y mx my < <(tr ',' ' ' <<<$1)
+    shift
+  fi
+
+  while ! check_win || exit $exit_win && ! check_die || exit $exit_die; do
+    # Get next argument as input, where running out is treated as quitting
+    [[ $# = 0 ]] && exit $exit_quit
+    inp=$1
+    shift
+
+    # Update
+    # Treat no movement the same as dying (as a convenient way of indicating
+    # to the caller not to continue trying this sequence of inputs)
+    process_input "$inp" || exit $exit_die
+
+    # Output state after each input, suitable for passing back in
+    echo "$x,$y,$mx,$my"
+  done
 fi

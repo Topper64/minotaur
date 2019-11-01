@@ -1,0 +1,75 @@
+#!/bin/bash
+
+set -u
+
+# ---- Constants
+
+# Exit codes from the minotaur program
+exit_win=0
+exit_die=1
+exit_quit=2
+
+# ---- Variables
+
+inputs=""
+states=""
+checked=""
+solutions=""
+
+# ---- Helper functions
+
+function next_seq {
+  while [[ $inputs = *x ]]; do
+    # Mark this state as having checked all movements away from it
+    checked="$checked ${states##* }"
+
+    # Remove the last move and state
+    inputs=${inputs% *}
+    states=${states% *}
+
+    # A single x is the last possible item
+    [[ $inputs = x ]] && return 1
+  done
+
+  # Cycle the last input through
+  # (empty) -> w (north) -> s (south) -> d (east) -> a (west) -> x (pass)
+  inputs="$(echo $inputs | sed 's/a$/x/')"
+  inputs="$(echo $inputs | sed 's/d$/a/')"
+  inputs="$(echo $inputs | sed 's/s$/d/')"
+  inputs="$(echo $inputs | sed 's/w$/s/')"
+  inputs="$(echo $inputs | sed 's/\(^\|\$\)$/w/')"
+}
+
+# ---- Main
+
+while next_seq; do
+  # Skip if we've already checked all directions from the current state
+  state=${states##* }
+  [[ -n $checked && " $checked " = *" $state "* ]] && continue
+
+  # Call the minotaur program with the current state and last input
+  state=$(./minotaur $state ${inputs##* })
+  res=$?
+  colour="31"
+
+  if [[ $res = $exit_win ]]; then
+    # Won
+    solutions="$solutions$inputs\n"
+    color="32"
+  fi
+
+  # Display what was checked
+  echo -ne "\ec"
+  echo -ne "\e[32m$solutions\e[m"
+  echo -e "$inputs"
+  echo -e "\e[${colour}m$res\e[m"
+
+  # Check unfinished
+  if [[ $res = $exit_quit && " $states " != *" $state "* ]]; then
+    # If so, add another input and push this state onto the stack
+    inputs="$inputs \$"
+    states="$states $state"
+  fi
+done
+
+echo -e "\ec\e[32m$solutions\e[m"
