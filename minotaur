@@ -1,0 +1,232 @@
+#!/bin/bash
+
+set -u
+
+# ---- Constants
+
+# Set up grid
+# Array indices are whatever you like, so start from zero to match strings
+grid=([ 0]="┏━━━━━━━━━┳━━━━━━━┳━━━━━━━━━┓"
+      [ 1]="┃         ┃       ┃         ┃"
+      [ 2]="┣━┳━┓ ╻ ╻ ┃ ┏━╸ ╺━┻━╸ ┏━━━╸ ┗━━"
+      [ 3]="┃ ┃ ┃ ┃ ┃ ┃ ┃         ┃       →"
+      [ 4]="┃ ╹ ╹ ┗━┛ ╹ ┗━╸ ━━━━━━┻━━━╸ ┏━━"
+      [ 5]="┃                           ┃"
+      [ 6]="┃ ╻ ┏━╸ ╻ ╻ ━━╸ ╻ ╻ ╺━━━╸ ╻ ┃"
+      [ 7]="┃ ┃ ┃   ┃ ┃     ┃ ┃       ┃ ┃"
+      [ 8]="┃ ┃ ┣━╸ ┃ ┃ ┃ ┃ ┃ ┗━━━━━┓ ┃ ┃"
+      [ 9]="┃ ┃ ┃   ┃ ┃ ┃ ┃ ┃       ┃ ┃ ┃"
+      [10]="┃ ┃ ┃ ╻ ╹ ┃ ┃ ╹ ╹ ╺━━━╸ ┃ ┃ ┃"
+      [11]="┃ ┃ ┃ ┃   ┃ ┃           ┃ ┃ ┃"
+      [12]="┃ ┃ ┃ ┃ ╻ ┃ ┃ ╻ ╻ ╺━━━╸ ┃ ┃ ┃"
+      [13]="┃ ┃ ┃ ┃ ┃ ┃ ┃ ┃ ┃       ┃ ┃ ┃"
+      [14]="┃ ┃ ┃ ┃ ┃ ┃ ┃ ┃ ┃ ╺━━━╸ ┃ ┃ ┃"
+      [15]="┃ ┃ ┃ ┃ ┃ ┃ ┃ ┃ ┃       ┃ ┃ ┃"
+      [16]="┃ ╹ ╹ ╹ ╹ ╹ ╹ ╹ ╹ ╺━━━╸ ╹ ╹ ┃"
+      [17]="┃                           ┃"
+      [18]="┗━━━━━━━━━━━━━━━━━━━━━━━━━━━┛")
+
+width=${#grid[0]}
+height=${#grid[@]}
+
+# Markers to output for the player (theseus) and the minotaur
+player="\e[1;32mT\e[m"
+minotaur="\e[1;31mM\e[m"
+
+# 8 spaces for padding purposes
+spaces="        "
+
+# ---- Variables
+
+# Positions of the player and minotaur
+# These are stored as indices into the grid array/strings, not the "actual"
+# grid co-ordinate (because we don't particularly care about that).
+# All even indices are reserved for walls, so these positions should only
+# ever be changed by 2
+x=1
+y=9
+mx=27
+my=9
+
+# To record inputs while in interactive mode
+inputs=""
+
+# ---- Helper functions
+
+function print_grid {
+  # Clear
+  echo -e "\ec"
+
+  # Loop over rows
+  for i in `seq 0 $(( $height-1 ))`; do
+    # Padding
+    echo -n "  "
+
+    if [[ $i = $y ]]; then
+      # This row contains the player
+
+      if [[ $i = $my ]]; then
+        # This row also contains the minotaur
+
+        if [[ $x -lt $mx ]]; then
+          # Player is further left
+          echo -n "${grid[$i]:0:$x}"
+          echo -ne $player
+          echo -n "${grid[$i]:$x+1:$mx-$x-1}"
+          echo -ne $minotaur
+          echo -n "${grid[$i]:$mx+1}"
+
+        elif [[ $x -gt $mx ]]; then
+          # Minotaur is further left
+          echo -n "${grid[$i]:0:$mx}"
+          echo -ne $minotaur
+          echo -n "${grid[$i]:$mx+1:$x-$mx-1}"
+          echo -ne $player
+          echo -n "${grid[$i]:$x+1}"
+
+        else
+          # Player has been eaten
+          echo -n "${grid[$i]:0:$mx}"
+          echo -ne $minotaur
+          echo -n "${grid[$i]:$mx+1}"
+        fi
+
+      else
+        # This row contains only the player
+        echo -n "${grid[$i]:0:$x}"
+        echo -ne $player
+        echo -n "${grid[$i]:$x+1}"
+      fi
+
+    elif [[ $i = $my ]]; then
+      # This row contains the minotaur but not the player
+      echo -n "${grid[$i]:0:$mx}"
+      echo -ne $minotaur
+      echo -n "${grid[$i]:$mx+1}"
+
+    else
+      # This row contains no-one
+      echo -n "${grid[$i]}"
+    fi
+
+    # More padding
+    # Because row lengths differ, also add spaces to the next multiple of 8
+    echo -n "  ${spaces:${#grid[$i]}%8}"
+
+    # Log moves next to the maze
+    if [[ $i = 0 ]]; then
+      echo -ne "\e[1m$((${#inputs}/2)) moves so far:\e[m"
+    elif [[ $i -gt 0 ]]; then
+      echo -n "${inputs:($i-1)*32:32}"
+    fi
+
+    # Move to the next line (finally)
+    echo
+  done
+}
+
+function process_input {
+  # Succeed iff either the player or minotaur moves
+  inp=${1:-}
+  inp=${inp:0:1}
+  inp=${inp,,}
+  case $inp in
+    q) # Quit
+      exit
+      ;;
+    [wsda]) # Directions
+      # Only move the minotaur if the player's move was successful (ie didn't
+      # try to walk into a wall)
+      if move_player $inp; then
+        move_minotaur
+        return 0
+      fi
+      return 1
+      ;;
+    x) # Pass
+      # Player doesn't move, so the success of this turn is whether the
+      # minotaur can move
+      move_minotaur
+      ;;
+    *) # Invalid
+      return 1
+  esac
+}
+
+function move_player {
+  direction=$1
+  case $direction in
+    [wW]*) # North
+      [[ ${grid[$y-1]:$x:1} = " " ]] && y=$(( $y-2 ))
+      ;;
+    [sS]*) # South
+      [[ ${grid[$y+1]:$x:1} = " " ]] && y=$(( $y+2 ))
+      ;;
+    [dD]*) # East
+      [[ ${grid[$y]:$x+1:1} = " " ]] && x=$(( $x+2 ))
+      ;;
+    [aA]*) # West
+      [[ ${grid[$y]:$x-1:1} = " " ]] && x=$(( $x-2 ))
+      ;;
+    *) # Invalid
+      return 1
+  esac
+}
+
+function move_minotaur {
+  # Minotaur makes two moves per player move, where a minotaur move is
+  # "move closer to the player horizontally if possible, or if not move closer
+  # vertically". Thus the minotaur moves a total of 0, 1, or 2 steps per turn
+  if _move_minotaur_single; then
+    _move_minotaur_single
+    return 0
+  fi
+  return 1
+}
+
+function _move_minotaur_single {
+  # Try to move closer horizontally
+  if [[ $x -lt $mx && ${grid[$my]:$mx-1:1} = " " ]]; then
+    mx=$(( $mx-2 ))
+  elif [[ $x -gt $mx && ${grid[$my]:$mx+1:1} = " " ]]; then
+    mx=$(( $mx+2 ))
+  # Try to move closer vertically
+  elif [[ $y -lt $my && ${grid[$my-1]:$mx:1} = " " ]]; then
+    my=$(( $my-2 ))
+  elif [[ $y -gt $my && ${grid[$my+1]:$mx:1} = " " ]]; then
+    my=$(( $my+2 ))
+  else
+    return 1
+  fi
+}
+
+function check_win {
+  # The grid layout and the move_player function are such that the only
+  # non-space character the player can stand on is the exit marker
+  [[ ${grid[$y]:$x:1} != " " ]]
+}
+
+function check_die {
+  # Simply do the player and minotaur positions match
+  [[ $x,$y = $mx,$my ]]
+}
+
+
+# ---- Main
+
+while
+  print_grid
+  ! check_win && ! check_die && read -es -n1 -p ":" inp
+do
+  # Update
+  process_input "$inp" && inputs="$inputs ${inp:0:1}"
+done
+
+# Output a nice message
+if check_win; then
+  echo -e "\e[32myou win!\e[0m"
+elif check_die; then
+  echo -e "\e[31myou died\e[0m"
+else
+  echo
+fi
