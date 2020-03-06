@@ -118,11 +118,26 @@ function print_grid {
     # Because row lengths differ, also add spaces to the next multiple of 8
     echo -n "  ${spaces:${#grid[$i]}%8}"
 
-    # Log moves next to the maze
-    if [[ $i = 0 ]]; then
-      echo -ne "\e[1m$((${#inputs}/2)) moves so far:\e[m"
-    elif [[ $i -gt 0 ]]; then
-      echo -n "${inputs:($i-1)*32:32}"
+    if [[ $i -lt 4 ]]; then
+      # Display controls
+      if [[ $i = 0 ]]; then
+        echo -ne "           \e[0;31mquit \e[1;31mQ  \e[1;33mW \e[0;33mup\e[m         "
+      elif [[ $i = 1 ]]; then
+        echo -ne "\e[1mControls:   \e[0;34mleft \e[1;34mA  \e[1;35mS  \e[1;36mD \e[0;36mright\e[m"
+      elif [[ $i = 2 ]]; then
+        echo -ne "                \e[0;35mdown \e[1;32mX \e[0;32mpass \e[0m"
+      fi
+    else
+      # Log moves next to the maze
+      if [[ $i = 4 ]]; then
+        echo -ne "\e[1m$((${#inputs}/2)) moves so far:\e[m"
+      elif [[ $i -gt 4 ]]; then
+        trimmed=$inputs
+        if [[ ${#trimmed} -gt 384 ]]; then
+          trimmed=" ...${trimmed: -380}"
+        fi
+        echo -n "${trimmed:($i-5)*32:32}"
+      fi
     fi
 
     # Move to the next line (finally)
